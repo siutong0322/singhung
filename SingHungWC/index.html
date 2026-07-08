@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大話骰 Canvas 小遊戲 (含聲效版)</title>
+    <style>
+        body {
+            background-color: #222;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding-top: 20px;
+        }
+        canvas {
+            background-color: #0c5c3a; /* 經典骰盅綠色底 */
+            border: 4px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        button {
+            background-color: #ffcc00;
+            color: #000;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            box-shadow: 0 4px #997a00;
+            transition: 0.1s;
+        }
+        button:active {
+            box-shadow: 0 0 #997a00;
+            transform: translateY(4px);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>星空大話骰 - 有一唔計單骰</h1>
+    
+    <!-- 畫布區域 -->
+    <canvas id="myCanvas" width="480" height="320"></canvas>
+    
+    <br>
+    <!-- 點擊按鍵 -->
+    <button id="rollBtn">骰盅搖起來！</button>
+    
+
+    <script>
+        const canvas = document.getElementById("myCanvas");
+        const ctx = canvas.getContext("2d");
+        const rollBtn = document.getElementById("rollBtn");
+
+        // 骰子外觀設定
+        const diceSize = 60;
+        const diceY = 130; 
+        const spacing = 24; 
+        const startX = (canvas.width - (5 * diceSize + 4 * spacing)) / 2; 
+
+        // 初始化音訊環境
+        let audioCtx = null;
+
+        // 初始化：點擊前的畫面
+        drawWelcome();
+
+        // 監聽按鍵點擊事件
+        rollBtn.addEventListener("click", function() {
+            // 瀏覽器安全限制：必須在玩家點擊按鍵後才能啟動音訊
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            rollDiceAnimation();
+        });
+
+        // 歡迎畫面
+        function drawWelcome() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#fff";
+            ctx.font = "24px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("請點擊下方按鍵開始搖骰", canvas.width / 2, canvas.height / 2);
+        }
+
+        // 用程式碼合成「骰子碰撞聲」的函數
+        function playDiceSound() {
+            if (!audioCtx) return;
+
+            // 建立白噪音源（模擬骰子隨機碰撞顆粒感）
+            const bufferSize = audioCtx.sampleRate * 0.04; // 聲音長度大約 0.04 秒 (很短的一聲)
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noiseNode = audioCtx.createBufferSource();
+            noiseNode.buffer = buffer;
+
+            // 建立低通濾波器（讓聲音聽起來像在木盒或塑膠盅裡面低沉的碰撞）
+            const filterNode = audioCtx.createBiquadFilter();
+            filterNode.type = "lowpass";
+            filterNode.frequency.setValueAtTime(600, audioCtx.currentTime); // 限制高音
+
+            // 建立音量控制器 (讓聲音有快速消失的尾音)
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+
+            // 連接音訊節點並播放
+            noiseNode.connect(filterNode);
+            filterNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            noiseNode.start();
+        }
+
+        // 搖骰子的滾動動畫
+        function rollDiceAnimation() {
+            let count = 0;
+            rollBtn.disabled = true; // 動畫期間禁用按鍵
+
+            const interval = setInterval(() => {
+                let randomDice = [];
+                for (let i = 0; i < 5; i++) {
+                    randomDice.push(Math.floor(Math.random() * 6) + 1);
+                }
+                renderGame(randomDice);
+                
+                // 每次骰子點數變換時，就同步播放一次碰撞聲
+                playDiceSound();
+
+                count++;
+                if (count > 12) { // 滾動 12 次後停止
+                    clearInterval(interval);
+                    rollBtn.disabled = false; // 恢復按鍵
+                }
+            }, 80); // 每 80 毫秒刷新並響一聲
+        }
+
+        // 渲染主畫面
+        function renderGame(diceArray) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "#ffcc00";
+            ctx.font = "bold 20px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("你的骰子點數：", canvas.width / 2, 50);
+
+            diceArray.forEach((value, index) => {
+                let x = startX + index * (diceSize + spacing);
+                drawDice(x, diceY, value);
+            });
+        }
+
+        // 繪製單顆骰子的函數
+        function drawDice(x, y, value) {
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.roundRect(x, y, diceSize, diceSize, 10); 
+            ctx.fill();
+
+            ctx.fillStyle = (value === 1) ? "#ff0000" : "#000000";
+            
+            const r = 5; 
+            const m = diceSize / 2; 
+            const q1 = diceSize / 4; 
+            const q3 = (diceSize / 4) * 3; 
+
+            if (value === 1) drawDot(x + m, y + m, r + 3);
+            if (value === 2) { drawDot(x + q1, y + q1, r); drawDot(x + q3, y + q3, r); }
+            if (value === 3) { drawDot(x + q1, y + q1, r); drawDot(x + m, y + m, r); drawDot(x + q3, y + q3, r); }
+            if (value === 4) { drawDot(x + q1, y + q1, r); drawDot(x + q1, y + q3, r); drawDot(x + q3, y + q1, r); drawDot(x + q3, y + q3, r); }
+            if (value === 5) { drawDot(x + q1, y + q1, r); drawDot(x + q1, y + q3, r); drawDot(x + m, y + m, r); drawDot(x + q3, y + q1, r); drawDot(x + q3, y + q3, r); }
+            if (value === 6) { drawDot(x + q1, y + q1, r); drawDot(x + q1, y + m, r); drawDot(x + q1, y + q3, r); drawDot(x + q3, y + q1, r); drawDot(x + q3, y + m, r); drawDot(x + q3, y + q3, r); }
+        }
+
+        function drawDot(cx, cy, radius) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    </script>
+</body>
+</html>
