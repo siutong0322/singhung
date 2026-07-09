@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>極簡中國象棋 (含入門AI)</title>
+    <style>
+        body { background-color: #222; color: #fff; font-family: Arial, sans-serif; text-align: center; }
+        canvas { background-color: #e4c49b; border: 5px solid #8b4513; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+        .info { font-size: 20px; font-weight: bold; margin: 10px; color: #ffcc00; }
+        button { background-color: #ffcc00; border: none; padding: 10px 25px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <h1>極簡中國象棋 - 挑戰入門 AI</h1>
+    <div class="info" id="status">你是紅方，請執紅子先走</div>
+    <canvas id="chessCanvas" width="400" height="450"></canvas>
+    <br><br>
+    <button onclick="location.reload()">重新開始</button>
+
+    <script>
+        const canvas = document.getElementById("chessCanvas");
+        const ctx = canvas.getContext("2d");
+        const statusText = document.getElementById("status");
+
+        const startX = 40, startY = 45, grid = 40;
+        let selectedPiece = null;
+        let isHumanTurn = true;
+
+        // 初始棋盤佈局：正數為紅方，負數為黑方（AI）
+        // 1:帥/將, 2:車, 3:馬, 4:炮, 5:相/象, 6:仕/士, 7:兵/卒
+        let board = [
+            [-2, -3, -5, -6, -1, -6, -5, -3, -2],
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 0, -4,  0,  0,  0,  0,  0, -4,  0],
+            [-7,  0, -7,  0, -7,  0, -7,  0, -7],
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0],
+            // 楚河漢界
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 7,  0,  7,  0,  7,  0,  7,  0,  7],
+            [ 0,  4,  0,  0,  0,  0,  0,  4,  0],
+            [ 0,  0,  0,  0,  0,  0,  0,  0,  0],
+            [ 2,  3,  5,  6,  1,  6,  5,  3,  2]
+        ];
+
+        const names = {
+            1:"帥", 2:"車", 3:"馬", 4:"炮", 5:"相", 6:"仕", 7:"兵",
+            "-1":"將", "-2":"車", "-3":"馬", "-4":"炮", "-5":"象", "-6":"士", "-7":"卒"
+        };
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#000";
+            ctx.lineWidth = 1;
+
+            // 畫格子線
+            for(let i=0; i<10; i++) {
+                ctx.beginPath(); ctx.moveTo(startX, startY + i*grid); ctx.lineTo(startX + 8*grid, startY + i*grid); ctx.stroke();
+            }
+            for(let j=0; j<9; j++) {
+                ctx.beginPath(); ctx.moveTo(startX + j*grid, startY); ctx.lineTo(startX + j*grid, startY + 4*grid); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(startX + j*grid, startY + 5*grid); ctx.lineTo(startX + j*grid, startY + 9*grid); ctx.stroke();
+            }
+
+            // 楚河漢界文字
+            ctx.fillStyle = "#000"; ctx.font = "20px Arial"; ctx.textAlign = "center";
+            ctx.fillText("楚 河", startX + 1.5*grid, startY + 4.6*grid);
+            ctx.fillText("漢 界", startX + 6.5*grid, startY + 4.6*grid);
+
+            // 畫九宮格斜線
+            ctx.beginPath(); ctx.moveTo(startX+3*grid, startY); ctx.lineTo(startX+5*grid, startY+2*grid); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(startX+5*grid, startY); ctx.lineTo(startX+3*grid, startY+2*grid); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(startX+3*grid, startY+7*grid); ctx.lineTo(startX+5*grid, startY+9*grid); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(startX+5*grid, startY+7*grid); ctx.lineTo(startX+3*grid, startY+9*grid); ctx.stroke();
+
+            // 畫棋子
+            for(let r=0; r<10; r++) {
+                for(let c=0; c<9; c++) {
+                    let p = board[r][c];
+                    if(p !== 0) {
+                        let x = startX + c*grid, y = startY + r*grid;
+                        
+                        // 被選中的棋子高亮圈圈
+                        if(selectedPiece && selectedPiece.r === r && selectedPiece.c === c) {
+                            ctx.fillStyle = "rgba(0, 255, 0, 0.4)";
+                            ctx.beginPath(); ctx.arc(x, y, 19, 0, Math.PI*2); ctx.fill();
+                        }
+
+                        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI*2); ctx.fill();
+                        ctx.strokeStyle = p > 0 ? "#ff0000" : "#000000"; ctx.lineWidth = 2; ctx.stroke();
+                        ctx.fillStyle = p > 0 ? "#ff0000" : "#000000"; ctx.font = "bold 16px Arial";
+                        ctx.fillText(names[p], x, y + 5);
+                    }
+                }
+            }
+        }
+
+        // 點擊事件監聽
+        canvas.addEventListener("click", (e) => {
+            if (!isHumanTurn) return;
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            let c = Math.round((clickX - startX) / grid);
+            let r = Math.round((clickY - startY) / grid);
+
+            if(r >= 0 && r < 10 && c >= 0 && c < 9) {
+                let p = board[r][c];
+                if(p > 0) { // 選中自己的紅子
+                    selectedPiece = {r, c, type: p};
+                    drawBoard();
+                } else if(selectedPiece) { // 移動或吃子（此處簡化規則，允許任意走到空位或黑子）
+                    board[selectedPiece.r][selectedPiece.c] = 0;
+                    board[r][c] = selectedPiece.type;
+                    selectedPiece = null;
+                    drawBoard();
+                    
+                    if (p === -1) { alert("你贏了！擊敗了AI將軍！"); location.reload(); return; }
+                    
+                    isHumanTurn = false;
+                    statusText.innerText = "AI 正在思考中...";
+                    setTimeout(aiMove, 600); // 延時讓 AI 下棋
+                }
+            }
+        });
+
+        // 入門級隨機/吃子 AI 邏輯
+        function aiMove() {
+            let moves = [];
+            // 掃描所有黑子能走的合理位置（簡化版：尋找周圍空位或紅子）
+            for(let r=0; r<10; r++) {
+                for(let c=0; c<9; c++) {
+                    if(board[r][c] < 0) { // 找到黑子
+                        // 檢查四周的格子
+                        let dirs = [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]];
+                        dirs.forEach(d => {
+                            let nr = r + d[0], nc = c + d[1];
+                            if(nr>=0 && nr<10 && nc>=0 && nc<9 && board[nr][nc] >= 0) {
+                                let weight = board[nr][nc] > 0 ? board[nr][nc] * 10 : 1; // 優先權重：能吃子權重高
+                                moves.push({from:{r,c}, to:{r:nr, c:nc}, piece: board[r][c], weight});
+                            }
+                        });
+                    }
+                }
+            }
+
+            if(moves.length > 0) {
+                // 根據權重排序，優先選擇能吃子（特別是帥）的走法
+                moves.sort((a,b) => b.weight - a.weight);
+                let bestMove = moves[0]; // 選擇最佳或隨機前幾個
+                
+                let targetPiece = board[bestMove.to.r][bestMove.to.c];
+                board[bestMove.from.r][bestMove.from.c] = 0;
+                board[bestMove.to.r][bestMove.to.c] = bestMove.piece;
+                drawBoard();
+
+                if (targetPiece === 1) { alert("你輸了！AI 成功將軍！"); location.reload(); return; }
+            }
+
+            isHumanTurn = true;
+            statusText.innerText = "輪到你了，請走子";
+        }
+
+        drawBoard();
+    </script>
+</body>
+</html>
